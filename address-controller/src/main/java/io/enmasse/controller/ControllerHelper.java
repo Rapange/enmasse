@@ -52,15 +52,21 @@ public class ControllerHelper {
 
     public void create(AddressSpace addressSpace) {
         Kubernetes instanceClient = kubernetes.withNamespace(addressSpace.getNamespace());
-        if (instanceClient.hasService("messaging")) {
-            return;
-        }
-        log.info("Creating address space {}", addressSpace);
-        if (!addressSpace.getNamespace().equals(namespace)) {
+        if (namespace.equals(addressSpace.getNamespace())) {
+            if (instanceClient.hasService("messaging")) {
+                return;
+            }
+        } else {
+            if (kubernetes.existsNamespace(addressSpace.getNamespace())) {
+                log.info("Address space {} exists", addressSpace);
+                return;
+            }
+            log.info("Creating address space {}", addressSpace);
             kubernetes.createNamespace(addressSpace.getName(), addressSpace.getNamespace());
             kubernetes.addSystemImagePullerPolicy(namespace, addressSpace.getNamespace());
             kubernetes.addDefaultEditPolicy(addressSpace.getNamespace());
             kubernetes.addAddressAdminRole(addressSpace.getNamespace());
+            kubernetes.addInfraAdminRole(namespace, addressSpace.getNamespace());
         }
 
         StandardResources resourceList = createResourceList(addressSpace);

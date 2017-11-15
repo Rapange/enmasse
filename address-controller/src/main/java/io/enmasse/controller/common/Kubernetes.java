@@ -51,6 +51,8 @@ public interface Kubernetes {
 
     void deleteNamespace(String namespace);
 
+    boolean existsNamespace(String namespace);
+
     void addSystemImagePullerPolicy(String namespace, String tenantNamespace);
 
     boolean hasService(String service);
@@ -69,6 +71,8 @@ public interface Kubernetes {
 
     SubjectAccessReview performSubjectAccessReview(String user, String namespace, String verb);
 
+    boolean isRBACSupported();
     void addDefaultEditPolicy(String namespace);
     void addAddressAdminRole(String namespace);
+    void addInfraAdminRole(String controllerNamespace, String namespace);
 }

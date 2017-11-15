@@ -6,6 +6,47 @@ local addressController = import "address-controller.jsonnet";
 local restapiRoute = import "restapi-route.jsonnet";
 local images = import "images.jsonnet";
 {
+  namespace_admin_role::
+    {
+      "apiVersion": "v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "namespace-admin"
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "authentication.k8s.io"
+          ],
+          "resources": [
+            "tokenreviews"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "resources": [
+            "namespaces"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "create",
+            "delete"
+          ]
+        },
+        {
+          "resources": [
+            "localsubjectaccessreviews"
+          ],
+          "verbs": [
+            "create"
+          ]
+        }
+      ]
+    },
+
   enmasse_admin_role::
     {
       "apiVersion": "v1",
