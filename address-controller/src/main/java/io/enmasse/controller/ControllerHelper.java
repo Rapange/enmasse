@@ -16,10 +16,7 @@
 package io.enmasse.controller;
 
 import io.enmasse.config.AnnotationKeys;
-import io.enmasse.controller.common.AuthenticationServiceResolverFactory;
-import io.enmasse.controller.common.Kubernetes;
-import io.enmasse.controller.common.KubernetesHelper;
-import io.enmasse.controller.common.TemplateParameter;
+import io.enmasse.controller.common.*;
 import io.enmasse.address.model.*;
 import io.enmasse.address.model.types.Plan;
 import io.enmasse.address.model.types.TemplateConfig;
@@ -63,10 +60,9 @@ public class ControllerHelper {
             }
             log.info("Creating address space {}", addressSpace);
             kubernetes.createNamespace(addressSpace.getName(), addressSpace.getNamespace());
-            kubernetes.addSystemImagePullerPolicy(namespace, addressSpace.getNamespace());
-            kubernetes.addDefaultEditPolicy(addressSpace.getNamespace());
-            kubernetes.addAddressAdminRole(addressSpace.getNamespace());
             kubernetes.addInfraAdminRole(namespace, addressSpace.getNamespace());
+            kubernetes.addSystemImagePullerPolicy(namespace, addressSpace.getNamespace());
+            kubernetes.addAddressAdminRole(addressSpace.getNamespace());
         }
 
         StandardResources resourceList = createResourceList(addressSpace);

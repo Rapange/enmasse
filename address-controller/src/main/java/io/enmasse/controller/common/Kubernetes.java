@@ -45,15 +45,11 @@ public interface Kubernetes {
     void delete(HasMetadata ... resources);
     KubernetesList processTemplate(String templateName, ParameterValue ... parameterValues);
 
-    Namespace createNamespace(String name, String namespace);
-
+    void createNamespace(String name, String namespace);
     List<Namespace> listNamespaces();
-
     void deleteNamespace(String namespace);
 
     boolean existsNamespace(String namespace);
-
-    void addSystemImagePullerPolicy(String namespace, String tenantNamespace);
 
     boolean hasService(String service);
 
@@ -72,7 +68,8 @@ public interface Kubernetes {
     SubjectAccessReview performSubjectAccessReview(String user, String namespace, String verb);
 
     boolean isRBACSupported();
-    void addDefaultEditPolicy(String namespace);
     void addAddressAdminRole(String namespace);
     void addInfraAdminRole(String controllerNamespace, String namespace);
+    void addSystemImagePullerPolicy(String namespace, String tenantNamespace);
+
 }

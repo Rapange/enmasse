@@ -3,7 +3,7 @@ local authService = import "include/auth-service.jsonnet";
 local kubernetes = import "include/enmasse-kubernetes.jsonnet";
 {
     "openshift/enmasse.json": template.generate(false),
-    "openshift/namespace-admin.json": template.namespace_admin_role,
+    "openshift/cluster-roles.json": template.cluster_roles,
     "openshift/addons/standard-authservice.json": authService.keycloak_openshift,
     "openshift/addons/none-authservice.json": authService.none_openshift,
     "openshift/enmasse-with-kafka.json": template.generate(true),

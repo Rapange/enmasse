@@ -130,14 +130,14 @@ public class KubernetesHelper implements Kubernetes {
     }
 
     @Override
-    public Namespace createNamespace(String name, String namespace) {
-        return client.namespaces().createNew()
+    public void createNamespace(String name, String namespace) {
+        client.namespaces().createNew()
                 .editOrNewMetadata()
-                    .withName(namespace)
-                    .addToLabels("app", "enmasse")
-                    .addToLabels(LabelKeys.TYPE, "address-space")
-                    .addToLabels(LabelKeys.ENVIRONMENT, environment)
-                    .addToAnnotations(AnnotationKeys.ADDRESS_SPACE, name)
+                .withName(namespace)
+                .addToLabels("app", "enmasse")
+                .addToLabels(LabelKeys.TYPE, "address-space")
+                .addToLabels(LabelKeys.ENVIRONMENT, environment)
+                .addToAnnotations(AnnotationKeys.ADDRESS_SPACE, name)
                 .endMetadata()
                 .done();
     }
@@ -361,6 +361,10 @@ public class KubernetesHelper implements Kubernetes {
             body.put("kind", "LocalSubjectAccessReview");
             body.put("apiVersion", "authorization.k8s.io/v1beta1");
 
+            JsonObject metadata = new JsonObject();
+            metadata.put("namespace", namespace);
+            body.put("metadata", metadata);
+
             JsonObject spec = new JsonObject();
 
             JsonObject resourceAttributes = new JsonObject();
@@ -394,7 +398,7 @@ public class KubernetesHelper implements Kubernetes {
 
     }
 
-    private void createRoleBinding(String name, String namespace, String refKind, String refName, String subjectKind, String subjectName, String subjectNamespace) {
+    private void createRoleBinding(String name, String namespace, String refKind, String refName, List<Subject> subjectList) {
         JsonObject body = new JsonObject();
 
         body.put("kind", "RoleBinding");
@@ -413,13 +417,15 @@ public class KubernetesHelper implements Kubernetes {
 
         JsonArray subjects = new JsonArray();
 
-        JsonObject subject = new JsonObject();
-        subject.put("kind", subjectKind);
-        subject.put("name", subjectName);
-        if (subjectNamespace != null) {
-            subject.put("namespace", subjectNamespace);
+        for (Subject subjectEntry : subjectList) {
+            JsonObject subject = new JsonObject();
+            subject.put("kind", subjectEntry.getKind());
+            subject.put("name", subjectEntry.getName());
+            if (subjectEntry.getNamespace() != null) {
+                subject.put("namespace", subjectEntry.getNamespace());
+            }
+            subjects.add(subject);
         }
-        subjects.add(subject);
 
         body.put("subjects", subjects);
 
@@ -428,78 +434,17 @@ public class KubernetesHelper implements Kubernetes {
     }
 
     @Override
-    public void addDefaultEditPolicy(String namespace) {
-        if (isRBACSupported()) {
-            createRoleBinding("sa-edit", namespace, "ClusterRole", "edit", "ServiceAccount", "default", namespace);
-
-        } else if (client.isAdaptable(OpenShiftClient.class)) {
-            Resource<PolicyBinding, DoneablePolicyBinding> bindingResource = client.policyBindings()
-                    .inNamespace(namespace)
-                    .withName(":default");
-
-            DoneablePolicyBinding binding;
-            if (bindingResource.get() == null) {
-                binding = bindingResource.createNew();
-            } else {
-                binding = bindingResource.edit();
-            }
-            binding.editOrNewMetadata()
-                    .withName(":default")
-                    .endMetadata()
-                    .editOrNewPolicyRef()
-                    .withName("default")
-                    .endPolicyRef()
-                    .addNewRoleBinding()
-                    .withName("edit")
-                    .editOrNewRoleBinding()
-                    .editOrNewMetadata()
-                    .withName("edit")
-                    .withNamespace(namespace)
-                    .endMetadata()
-                    .addToUserNames("system:serviceaccount:" + namespace + ":default")
-                    .addNewSubject()
-                    .withName("default")
-                    .withNamespace(namespace)
-                    .withKind("ServiceAccount")
-                    .endSubject()
-                    .withNewRoleRef()
-                    .withName("edit")
-                    .endRoleRef()
-                    .endRoleBinding()
-                    .endRoleBinding()
-                    .done();
-        } else {
-            log.info("No support for RBAC, won't add any default edit policy");
-        }
-    }
-
-
-    @Override
     public void addAddressAdminRole(String namespace) {
+        String roleName = "enmasse-address-admin";
+        String groupName = "system:serviceaccounts:" + namespace;
+
         if (isRBACSupported()) {
-            String roleName = "address-admin";
-            String groupName = "system:serviceaccounts:" + namespace;
-
-            Map<String, List<String>> typeToVerb = new HashMap<>();
-            typeToVerb.put("configmaps", Arrays.asList("create", "list", "get", "delete", "watch", "update"));
-            createRole(roleName, namespace, typeToVerb);
-            createRoleBinding(roleName + "-sa", namespace, "Role", "address-admin", "Group", groupName, namespace);
+            createRoleBinding("address-admins", namespace, "Role", roleName, Arrays.asList(
+                    new Subject("Group", groupName, namespace)));
         } else if (client.isAdaptable(OpenShiftClient.class)) {
-            String roleName = "address-admin";
-            client.roles().inNamespace(namespace).createNew()
-                    .withNewMetadata()
-                    .withName(roleName)
-                    .endMetadata()
-                    .addNewRule()
-                    .addToResources("configmaps")
-                    .addToVerbs("create", "list", "get", "delete", "watch", "update")
-                    .endRule()
-                    .done();
-
-            String groupName = "system:serviceaccounts:" + namespace;
             RoleBinding roleBinding = new RoleBindingBuilder()
                     .editOrNewMetadata()
-                    .withName(roleName)
+                    .withName("address-admins")
                     .withNamespace(namespace)
                     .endMetadata()
                     .addToGroupNames(groupName)
@@ -536,54 +481,55 @@ public class KubernetesHelper implements Kubernetes {
         }
     }
 
-    private void createRole(String roleName, String namespace, Map<String, List<String>> typeToVerb) {
-        JsonObject body = new JsonObject();
-
-        body.put("kind", "Role");
-        body.put("apiVersion", "rbac.authorization.k8s.io/v1beta1");
-
-        JsonObject metadata = new JsonObject();
-        metadata.put("name", roleName);
-        metadata.put("namespace", namespace);
-        body.put("metadata", metadata);
-
-        JsonArray rules = new JsonArray();
-
-        JsonObject rule = new JsonObject();
-        JsonArray resources = new JsonArray();
-        Set<String> verbSet = new HashSet<>();
-        for (Map.Entry<String, List<String>> entry : typeToVerb.entrySet()) {
-            resources.add(entry.getKey());
-            verbSet.addAll(entry.getValue());
-        }
-
-        JsonArray verbs = new JsonArray();
-        for (String verb : verbSet) {
-            verbs.add(verb);
-        }
-
-        JsonArray apiGroups = new JsonArray();
-        apiGroups.add("");
-        rule.put("apiGroups", apiGroups);
-        rule.put("resources", resources);
-        rule.put("verbs", verbs);
-
-        rules.add(rule);
-
-        body.put("rules", rules);
-
-        doRawHttpRequest("/apis/rbac.authorization.k8s.io/v1beta1/namespaces/" + namespace + "/roles", "POST", body, false);
-    }
-
     @Override
     public void addInfraAdminRole(String controllerNamespace, String namespace) {
         if (isRBACSupported()) {
-            Map<String, List<String>> typeToVerb = new HashMap<>();
-            typeToVerb.put("ResourceAll", Arrays.asList("create", "list", "get", "delete", "watch", "update"));
-            createRole("infra-admin", namespace, typeToVerb);
-            createRoleBinding("infra-admin", namespace, "Role", "infra-admin", "ServiceAccount", "default", controllerNamespace);
+            createRoleBinding("infra-admins", namespace, "ClusterRole", "enmasse-infra-admin", Arrays.asList(
+                    new Subject("ServiceAccount", "default", namespace),
+                    new Subject("ServiceAccount", "enmasse-service-account", controllerNamespace)));
         } else if (client.isAdaptable(OpenShiftClient.class)) {
-            log.info("Assuming cluster-admin privileges already granted");
+            Resource<PolicyBinding, DoneablePolicyBinding> bindingResource = client.policyBindings()
+                    .inNamespace(namespace)
+                    .withName(":default");
+
+            DoneablePolicyBinding binding;
+            if (bindingResource.get() == null) {
+                binding = bindingResource.createNew();
+            } else {
+                binding = bindingResource.edit();
+            }
+            binding.editOrNewMetadata()
+                    .withName(":default")
+                    .endMetadata()
+                    .editOrNewPolicyRef()
+                    .withName("default")
+                    .endPolicyRef()
+                    .addNewRoleBinding()
+                    .withName("infra-admins")
+                    .editOrNewRoleBinding()
+                    .editOrNewMetadata()
+                    .withName("infra-admins")
+                    .withNamespace(namespace)
+                    .endMetadata()
+                    .addToUserNames("system:serviceaccount:" + namespace + ":default")
+                    .addToUserNames("system:serviceaccount:" + controllerNamespace + ":enmasse-service-account")
+                    .addNewSubject()
+                    .withName("default")
+                    .withNamespace(namespace)
+                    .withKind("ServiceAccount")
+                    .endSubject()
+                    .addNewSubject()
+                    .withName("enmasse-service-account")
+                    .withNamespace(controllerNamespace)
+                    .withKind("ServiceAccount")
+                    .endSubject()
+                    .withNewRoleRef()
+                    .withName("edit")
+                    .withKind("ClusterRole")
+                    .endRoleRef()
+                    .endRoleBinding()
+                    .endRoleBinding()
+                    .done();
         } else {
             log.info("No support for RBAC, won't add to infra-admin role");
         }
@@ -600,5 +546,29 @@ public class KubernetesHelper implements Kubernetes {
     private static boolean isReady(Deployment deployment) {
         Integer unavailableReplicas = deployment.getStatus().getUnavailableReplicas();
         return unavailableReplicas == null || unavailableReplicas == 0;
+    }
+
+    private static class Subject {
+        private final String kind;
+        private final String name;
+        private final String namespace;
+
+        private Subject(String kind, String name, String namespace) {
+            this.kind = kind;
+            this.name = name;
+            this.namespace = namespace;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getKind() {
+            return kind;
+        }
+
+        public String getNamespace() {
+            return namespace;
+        }
     }
 }
